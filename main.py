@@ -202,7 +202,7 @@ def main(_):
     # the same size as the input). Note that {strides} is a 4D array whose
     # shape matches the data layout: [image index, y, x, depth].
     with tf.device(tf.train.replica_device_setter(
-        worker_device="/job:worker/task:%d" % FLAGS.index, 
+        #worker_device="/job:worker/task:%d" % FLAGS.index, 
         cluster=ClusterSpecification.CLUSTER_SPEC)):
         
       conv = tf.nn.conv2d(data,
@@ -244,7 +244,7 @@ def main(_):
 
 
   with tf.device(tf.train.replica_device_setter(
-      worker_device="/job:worker/task:%d" % FLAGS.index, 
+      #worker_device="/job:worker/task:%d" % FLAGS.index, 
       cluster=ClusterSpecification.CLUSTER_SPEC)):
 
     # Training computation: logits + cross-entropy loss.
