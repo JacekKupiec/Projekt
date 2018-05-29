@@ -202,7 +202,7 @@ def main(_):
     # the same size as the input). Note that {strides} is a 4D array whose
     # shape matches the data layout: [image index, y, x, depth].
     with tf.device(tf.train.replica_device_setter(
-        #worker_device="/job:worker/task:%d" % FLAGS.index, 
+        worker_device="/job:worker/task:%d" % FLAGS.index, 
         cluster=ClusterSpecification.CLUSTER_SPEC)):
         
       conv = tf.nn.conv2d(data,
@@ -244,7 +244,7 @@ def main(_):
 
 
   with tf.device(tf.train.replica_device_setter(
-      #worker_device="/job:worker/task:%d" % FLAGS.index, 
+      worker_device="/job:worker/task:%d" % FLAGS.index, 
       cluster=ClusterSpecification.CLUSTER_SPEC)):
 
     # Training computation: logits + cross-entropy loss.
@@ -304,9 +304,7 @@ def main(_):
   start_time = time.time()
 
   with tf.train.MonitoredTrainingSession(master=server.target, is_chief=(FLAGS.index == 0)) as sess:
-    # Run all the initializers to prepare the trainable parameters.
-    #sess.run(tf.global_variables_initializer())
-    #print('Initialized!')
+    #MonitoredTrainingSession samo wykonuje inicjalizację
 
     # Loop through training steps.
     for step in xrange(int(num_epochs * train_size) // BATCH_SIZE):
@@ -325,8 +323,7 @@ def main(_):
       # print some extra information once reach the evaluation frequency
       if step % EVAL_FREQUENCY == 0:
         # fetch some extra nodes' data
-        l, lr, predictions = sess.run([loss, learning_rate, train_prediction],
-                                      feed_dict=feed_dict)
+        l, lr, predictions = sess.run([loss, learning_rate, train_prediction], feed_dict=feed_dict)
         elapsed_time = time.time() - start_time
         start_time = time.time()
 
