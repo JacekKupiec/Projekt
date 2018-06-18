@@ -201,44 +201,44 @@ def main(_):
     # 2D convolution, with 'SAME' padding (i.e. the output feature map has
     # the same size as the input). Note that {strides} is a 4D array whose
     # shape matches the data layout: [image index, y, x, depth].
-    with tf.device(tf.train.replica_device_setter(
-        worker_device="/job:worker/task:%d" % FLAGS.index, 
-        cluster=ClusterSpecification.CLUSTER_SPEC)):
         
-      conv = tf.nn.conv2d(data,
-                          conv1_weights,
-                          strides=[1, 1, 1, 1],
+    conv = tf.nn.conv2d(data,
+                        conv1_weights,
+                        strides=[1, 1, 1, 1],
+                        padding='SAME')
+    # Bias and rectified linear non-linearity.
+    relu = tf.nn.relu(tf.nn.bias_add(conv, conv1_biases))
+    # Max pooling. The kernel size spec {ksize} also follows the layout of
+    # the data. Here we have a pooling window of 2, and a stride of 2.
+    pool = tf.nn.max_pool(relu,
+                          ksize=[1, 2, 2, 1],
+                          strides=[1, 2, 2, 1],
                           padding='SAME')
-      # Bias and rectified linear non-linearity.
-      relu = tf.nn.relu(tf.nn.bias_add(conv, conv1_biases))
-      # Max pooling. The kernel size spec {ksize} also follows the layout of
-      # the data. Here we have a pooling window of 2, and a stride of 2.
-      pool = tf.nn.max_pool(relu,
-                            ksize=[1, 2, 2, 1],
-                            strides=[1, 2, 2, 1],
-                            padding='SAME')
-      conv = tf.nn.conv2d(pool,
-                          conv2_weights,
-                          strides=[1, 1, 1, 1],
+    conv = tf.nn.conv2d(pool,
+                        conv2_weights,
+                        strides=[1, 1, 1, 1],
+                        padding='SAME')
+    relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
+    pool = tf.nn.max_pool(relu,
+                          ksize=[1, 2, 2, 1],
+                          strides=[1, 2, 2, 1],
                           padding='SAME')
-      relu = tf.nn.relu(tf.nn.bias_add(conv, conv2_biases))
-      pool = tf.nn.max_pool(relu,
-                            ksize=[1, 2, 2, 1],
-                            strides=[1, 2, 2, 1],
-                            padding='SAME')
-      # Reshape the feature map cuboid into a 2D matrix to feed it to the
-      # fully connected layers.
-      pool_shape = pool.get_shape().as_list()
-      reshape = tf.reshape(pool, [pool_shape[0], pool_shape[1] * pool_shape[2] * pool_shape[3]])
-      # Fully connected layer. Note that the '+' operation automatically
-      # broadcasts the biases.
-      hidden = tf.nn.relu(tf.matmul(reshape, fc1_weights) + fc1_biases)
-      # Add a 50% dropout during training only. Dropout also scales
-      # activations such that no rescaling is needed at evaluation time.
-      if train:
-        hidden = tf.nn.dropout(hidden, 0.5, seed=SEED)
 
-      mmm = tf.matmul(hidden, fc2_weights) + fc2_biases
+    # Reshape the feature map cuboid into a 2D matrix to feed it to the
+    # fully connected layers.
+    pool_shape = pool.get_shape().as_list()
+    reshape = tf.reshape(pool, [pool_shape[0], pool_shape[1] * pool_shape[2] * pool_shape[3]])
+
+    # Fully connected layer. Note that the '+' operation automatically
+    # broadcasts the biases.
+    hidden = tf.nn.relu(tf.matmul(reshape, fc1_weights) + fc1_biases)
+
+    # Add a 50% dropout during training only. Dropout also scales
+    # activations such that no rescaling is needed at evaluation time.
+    if train:
+      hidden = tf.nn.dropout(hidden, 0.5, seed=SEED)
+
+    mmm = tf.matmul(hidden, fc2_weights) + fc2_biases
 
     return mmm
 
@@ -256,6 +256,8 @@ def main(_):
                     tf.nn.l2_loss(fc2_weights) + tf.nn.l2_loss(fc2_biases))
     # Add the regularization term to the loss.
     loss += 5e-4 * regularizers
+
+    global_step = tf.train.get_or_create_global_step()
 
     # Decay once per epoch, using an exponential schedule starting at 0.01.
     learning_rate = tf.train.exponential_decay(
@@ -304,8 +306,7 @@ def main(_):
   start_time = time.time()
 
   with tf.train.MonitoredTrainingSession(master=server.target, is_chief=(FLAGS.index == 0)) as sess:
-    #MonitoredTrainingSession samo wykonuje inicjalizację
-
+    # MonitoredTrainingSession samo wykonuje inicjalizację
     # Loop through training steps.
     for step in xrange(int(num_epochs * train_size) // BATCH_SIZE):
       # Compute the offset of the current minibatch in the data.
@@ -319,6 +320,9 @@ def main(_):
       feed_dict = {train_data_node: batch_data, train_labels_node: batch_labels}
       # Run the optimizer to update weights.
       sess.run(optimizer, feed_dict=feed_dict)
+
+      gstep = sess.run(batch)
+      print("Global step: %s" % gstep)
 
       # print some extra information once reach the evaluation frequency
       if step % EVAL_FREQUENCY == 0:
